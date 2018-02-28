@@ -47,7 +47,8 @@ static inline void *StacktracePowerPCGetLR(void **sp) {
   return *(sp+2);
 #elif defined(_CALL_SYSV)
   return *(sp+1);
-#elif defined(__APPLE__) || (defined(__linux__) && defined(__PPC64__))
+#elif defined(__APPLE__) || defined(__FreeBSD__) || \
+    (defined(__linux__) && defined(__PPC64__))
   // This check is in case the compiler doesn't define _CALL_AIX/etc.
   return *(sp+2);
 #elif defined(__linux)
@@ -98,13 +99,13 @@ static void **NextStackFrame(void **old_sp, const void *uc) {
     // possibly be there.
     static const unsigned char *kernel_sigtramp_rt64_address = nullptr;
     if (kernel_symbol_status == kNotInitialized) {
-      absl::debug_internal::VDSOSupport vdso;
+      absl::debugging_internal::VDSOSupport vdso;
       if (vdso.IsPresent()) {
-        absl::debug_internal::VDSOSupport::SymbolInfo
+        absl::debugging_internal::VDSOSupport::SymbolInfo
             sigtramp_rt64_symbol_info;
         if (!vdso.LookupSymbol(
                 "__kernel_sigtramp_rt64", "LINUX_2.6.15",
-                absl::debug_internal::VDSOSupport::kVDSOSymbolType,
+                absl::debugging_internal::VDSOSupport::kVDSOSymbolType,
                 &sigtramp_rt64_symbol_info) ||
             sigtramp_rt64_symbol_info.address == nullptr) {
           // Unexpected: VDSO is present, yet the expected symbol is missing
@@ -136,7 +137,7 @@ static void **NextStackFrame(void **old_sp, const void *uc) {
         // Check that alleged stack pointer is actually readable. This is to
         // prevent a "double fault" in case we hit the first fault due to e.g.
         // a stack corruption.
-        if (absl::debug_internal::AddressIsReadable(sp_before_signal)) {
+        if (absl::debugging_internal::AddressIsReadable(sp_before_signal)) {
           // Alleged stack pointer is readable, use it for further unwinding.
           new_sp = sp_before_signal;
         }
@@ -230,5 +231,13 @@ static int UnwindImpl(void** result, int* sizes, int max_depth, int skip_count,
   }
   return n;
 }
+
+namespace absl {
+namespace debugging_internal {
+bool StackTraceWorksForTest() {
+  return true;
+}
+}  // namespace debugging_internal
+}  // namespace absl
 
 #endif  // ABSL_DEBUGGING_INTERNAL_STACKTRACE_POWERPC_INL_H_

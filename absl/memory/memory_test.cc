@@ -138,6 +138,16 @@ TEST(Make_UniqueTest, Array) {
   EXPECT_THAT(ArrayWatch::allocs(), ElementsAre(5 * sizeof(ArrayWatch)));
 }
 
+TEST(Make_UniqueTest, NotAmbiguousWithStdMakeUnique) {
+  // Ensure that absl::make_unique is not ambiguous with std::make_unique.
+  // In C++14 mode, the below call to make_unique has both types as candidates.
+  struct TakesStdType {
+    explicit TakesStdType(const std::vector<int> &vec) {}
+  };
+  using absl::make_unique;
+  make_unique<TakesStdType>(std::vector<int>());
+}
+
 #if 0
 // TODO(billydonahue): Make a proper NC test.
 // These tests shouldn't compile.
@@ -426,6 +436,20 @@ TEST(AllocatorTraits, Typedefs) {
   EXPECT_TRUE(
       (std::is_same<std::false_type,
                     absl::allocator_traits<NonEmpty>::is_always_equal>::value));
+}
+
+template <typename T>
+struct AllocWithPrivateInheritance : private std::allocator<T> {
+  using value_type = T;
+};
+
+TEST(AllocatorTraits, RebindWithPrivateInheritance) {
+  // Regression test for some versions of gcc that do not like the sfinae we
+  // used in combination with private inheritance.
+  EXPECT_TRUE(
+      (std::is_same<AllocWithPrivateInheritance<int>,
+                    absl::allocator_traits<AllocWithPrivateInheritance<char>>::
+                        rebind_alloc<int>>::value));
 }
 
 template <typename T>

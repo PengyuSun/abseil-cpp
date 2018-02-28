@@ -10,6 +10,7 @@ standard library.
 - [Codemap](#codemap)
 - [License](#license)
 - [Links](#links)
+- [Build with cmake](#cmake)
 
 <a name="about"></a>
 ## About Abseil
@@ -67,7 +68,7 @@ Abseil contains the following C++ library components:
   time zones.
 * [`types`](absl/types/)
   <br /> The `types` library contains non-container utility types, like a
-  C++11-compatible version of `absl::optional`.
+  C++11-compatible version of the C++17 `std::optional` type.
 
 ## License
 
@@ -84,7 +85,8 @@ For more information about Abseil:
 * Peruse our
   [Abseil Compatibility Guarantees](http://abseil.io/about/compatibility) to
   understand both what we promise to you, and what we expect of you in return.
+  
+<a name="cmake"></a>
+## Build with CMake
 
-## Disclaimer
-
-*   This is not an official Google product.
+Please check the [CMake build instructions](CMake/README.md)

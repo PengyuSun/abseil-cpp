@@ -17,6 +17,9 @@ GCC_FLAGS = [
     "-Wvarargs",
     "-Wvla",  # variable-length array
     "-Wwrite-strings",
+    # Google style does not use unsigned integers, though STL containers
+    # have unsigned types.
+    "-Wno-sign-compare",
 ]
 
 GCC_TEST_FLAGS = [
@@ -28,43 +31,59 @@ GCC_TEST_FLAGS = [
     "-Wno-unused-private-field",
 ]
 
+
+# Docs on single flags is preceded by a comment.
+# Docs on groups of flags is preceded by ###.
+
 LLVM_FLAGS = [
+    # All warnings are treated as errors by implicit -Werror flag
     "-Wall",
     "-Wextra",
     "-Weverything",
+    # Abseil does not support C++98
     "-Wno-c++98-compat-pedantic",
-    "-Wno-comma",
+    # Turns off all implicit conversion warnings. Most are re-enabled below.
     "-Wno-conversion",
     "-Wno-covered-switch-default",
     "-Wno-deprecated",
     "-Wno-disabled-macro-expansion",
-    "-Wno-documentation",
-    "-Wno-documentation-unknown-command",
     "-Wno-double-promotion",
-    "-Wno-exit-time-destructors",
+    ###
+    # Turned off as they include valid C++ code.
+    "-Wno-comma",
     "-Wno-extra-semi",
+    "-Wno-packed",
+    "-Wno-padded",
+    ###
     "-Wno-float-conversion",
     "-Wno-float-equal",
     "-Wno-format-nonliteral",
+    # Too aggressive: warns on Clang extensions enclosed in Clang-only
+    # compilation paths.
     "-Wno-gcc-compat",
+    ###
+    # Some internal globals are necessary. Don't do this at home.
     "-Wno-global-constructors",
+    "-Wno-exit-time-destructors",
+    ###
     "-Wno-nested-anon-types",
     "-Wno-non-modular-include-in-module",
     "-Wno-old-style-cast",
-    "-Wno-packed",
-    "-Wno-padded",
+    # Warns on preferred usage of non-POD types such as string_view
     "-Wno-range-loop-analysis",
     "-Wno-reserved-id-macro",
     "-Wno-shorten-64-to-32",
-    "-Wno-sign-conversion",
     "-Wno-switch-enum",
     "-Wno-thread-safety-negative",
     "-Wno-undef",
     "-Wno-unknown-warning-option",
     "-Wno-unreachable-code",
+    # Causes warnings on include guards
     "-Wno-unused-macros",
     "-Wno-weak-vtables",
-    # flags below are also controlled by -Wconversion which is disabled
+    ###
+    # Implicit conversion warnings turned off by -Wno-conversion
+    # which are re-enabled below.
     "-Wbitfield-enum-conversion",
     "-Wbool-conversion",
     "-Wconstant-conversion",
@@ -74,7 +93,9 @@ LLVM_FLAGS = [
     "-Wnon-literal-null-conversion",
     "-Wnull-conversion",
     "-Wobjc-literal-conversion",
+    "-Wno-sign-conversion",
     "-Wstring-conversion",
+    ###
 ]
 
 LLVM_TEST_FLAGS = [
@@ -97,12 +118,14 @@ LLVM_TEST_FLAGS = [
 MSVC_FLAGS = [
     "/W3",
     "/WX",
-    "/wd4005",  # macro-redifinition
+    "/wd4005",  # macro-redefinition
     "/wd4068",  # unknown pragma
     "/wd4244",  # conversion from 'type1' to 'type2', possible loss of data
     "/wd4267",  # conversion from 'size_t' to 'type', possible loss of data
     "/wd4800",  # forcing value to bool 'true' or 'false' (performance warning)
+    "/DNOMINMAX",  # Don't define min and max macros (windows.h)
     "/DWIN32_LEAN_AND_MEAN",  # Don't bloat namespace with incompatible winsock versions.
+    "/D_CRT_SECURE_NO_WARNINGS",  # Don't warn about usage of insecure C functions
 ]
 
 MSVC_TEST_FLAGS = [

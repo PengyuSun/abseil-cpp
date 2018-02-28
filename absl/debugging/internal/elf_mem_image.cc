@@ -38,7 +38,7 @@
 #define VERSYM_VERSION 0x7fff
 
 namespace absl {
-namespace debug_internal {
+namespace debugging_internal {
 
 namespace {
 
@@ -75,8 +75,9 @@ const T *GetTableElement(const ElfW(Ehdr) * ehdr, ElfW(Off) table_offset,
 
 }  // namespace
 
-const void *const ElfMemImage::kInvalidBase =
-    reinterpret_cast<const void *>(~0L);
+// The value of this variable doesn't matter; it's used only for its
+// unique address.
+const int ElfMemImage::kInvalidBaseSentinel = 0;
 
 ElfMemImage::ElfMemImage(const void *base) {
   ABSL_RAW_CHECK(base != kInvalidBase, "bad pointer");
@@ -391,7 +392,7 @@ void ElfMemImage::SymbolIterator::Update(int increment) {
   info_.symbol  = symbol;
 }
 
-}  // namespace debug_internal
+}  // namespace debugging_internal
 }  // namespace absl
 
 #endif  // ABSL_HAVE_ELF_MEM_IMAGE

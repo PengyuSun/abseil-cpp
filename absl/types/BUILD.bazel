@@ -28,7 +28,7 @@ licenses(["notice"])  # Apache 2.0
 cc_library(
     name = "any",
     hdrs = ["any.h"],
-    copts = ABSL_DEFAULT_COPTS,
+    copts = ABSL_DEFAULT_COPTS + ABSL_EXCEPTIONS_FLAG,
     deps = [
         ":bad_any_cast",
         "//absl/base:config",
@@ -43,9 +43,6 @@ cc_library(
     srcs = ["bad_any_cast.cc"],
     hdrs = ["bad_any_cast.h"],
     copts = ABSL_EXCEPTIONS_FLAG + ABSL_DEFAULT_COPTS,
-    features = [
-        "-use_header_modules",
-    ],
     deps = [
         "//absl/base",
         "//absl/base:config",
@@ -86,6 +83,17 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "any_exception_safety_test",
+    srcs = ["any_exception_safety_test.cc"],
+    copts = ABSL_TEST_COPTS + ABSL_EXCEPTIONS_FLAG,
+    deps = [
+        ":any",
+        "//absl/base:exception_safety_testing",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "span",
     hdrs = ["span.h"],
@@ -95,7 +103,6 @@ cc_library(
         "//absl/base:core_headers",
         "//absl/base:throw_delegate",
         "//absl/meta:type_traits",
-        "//absl/strings",
     ],
 )
 
@@ -103,7 +110,7 @@ cc_test(
     name = "span_test",
     size = "small",
     srcs = ["span_test.cc"],
-    copts = ABSL_TEST_COPTS + ["-fexceptions"],
+    copts = ABSL_TEST_COPTS + ABSL_EXCEPTIONS_FLAG,
     deps = [
         ":span",
         "//absl/base:config",
@@ -152,9 +159,6 @@ cc_library(
     srcs = ["bad_optional_access.cc"],
     hdrs = ["bad_optional_access.h"],
     copts = ABSL_DEFAULT_COPTS + ABSL_EXCEPTIONS_FLAG,
-    features = [
-        "-use_header_modules",
-    ],
     deps = [
         "//absl/base",
         "//absl/base:config",

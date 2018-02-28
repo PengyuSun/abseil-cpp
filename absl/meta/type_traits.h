@@ -135,8 +135,11 @@ struct negation : std::integral_constant<bool, !T::value> {};
 //
 // Determines whether the passed type `T` is trivially destructable.
 //
-// This metafunction is designed to be a drop-in replacement for the C++17
-// `std::is_trivially_destructible()` metafunction.
+// This metafunction is designed to be a drop-in replacement for the C++11
+// `std::is_trivially_destructible()` metafunction for platforms that have
+// incomplete C++11 support (such as libstdc++ 4.x). On any platforms that do
+// fully support C++11, we check whether this yields the same result as the std
+// implementation.
 //
 // NOTE: the extensions (__has_trivial_xxx) are implemented in gcc (version >=
 // 4.3) and clang. Since we are supporting libstdc++ > 4.7, they should always
@@ -145,11 +148,17 @@ struct negation : std::integral_constant<bool, !T::value> {};
 template <typename T>
 struct is_trivially_destructible
     : std::integral_constant<bool, __has_trivial_destructor(T) &&
-                                       std::is_destructible<T>::value> {
+                                   std::is_destructible<T>::value> {
 #ifdef ABSL_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE
-  static_assert(std::is_trivially_destructible<T>::value ==
-                    is_trivially_destructible::value,
-                "Not compliant with std::is_trivially_destructible");
+ private:
+  static constexpr bool compliant = std::is_trivially_destructible<T>::value ==
+                                    is_trivially_destructible::value;
+  static_assert(compliant || std::is_trivially_destructible<T>::value,
+                "Not compliant with std::is_trivially_destructible; "
+                "Standard: false, Implementation: true");
+  static_assert(compliant || !std::is_trivially_destructible<T>::value,
+                "Not compliant with std::is_trivially_destructible; "
+                "Standard: true, Implementation: false");
 #endif  // ABSL_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE
 };
 
@@ -157,8 +166,11 @@ struct is_trivially_destructible
 //
 // Determines whether the passed type `T` is trivially default constructible.
 //
-// This metafunction is designed to be a drop-in replacement for the C++17
-// `std::is_trivially_default_constructible()` metafunction.
+// This metafunction is designed to be a drop-in replacement for the C++11
+// `std::is_trivially_default_constructible()` metafunction for platforms that
+// have incomplete C++11 support (such as libstdc++ 4.x). On any platforms that
+// do fully support C++11, we check whether this yields the same result as the
+// std implementation.
 //
 // NOTE: according to the C++ standard, Section: 20.15.4.3 [meta.unary.prop]
 // "The predicate condition for a template specialization is_constructible<T,
@@ -180,18 +192,24 @@ struct is_trivially_destructible
 // GCC bug 51452: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=51452
 // LWG issue 2116: http://cplusplus.github.io/LWG/lwg-active.html#2116.
 //
-// "T obj();" need to be well-formed and not call any non-trivial operation.
+// "T obj();" need to be well-formed and not call any nontrivial operation.
 // Nontrivally destructible types will cause the expression to be nontrivial.
 template <typename T>
 struct is_trivially_default_constructible
-    : std::integral_constant<bool,
-                             __has_trivial_constructor(T) &&
-                                 std::is_default_constructible<T>::value &&
-                                 is_trivially_destructible<T>::value> {
+    : std::integral_constant<bool, __has_trivial_constructor(T) &&
+                                   std::is_default_constructible<T>::value &&
+                                   is_trivially_destructible<T>::value> {
 #ifdef ABSL_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE
-  static_assert(std::is_trivially_default_constructible<T>::value ==
-                    is_trivially_default_constructible::value,
-                "Not compliant with std::is_trivially_default_constructible");
+ private:
+  static constexpr bool compliant =
+      std::is_trivially_default_constructible<T>::value ==
+      is_trivially_default_constructible::value;
+  static_assert(compliant || std::is_trivially_default_constructible<T>::value,
+                "Not compliant with std::is_trivially_default_constructible; "
+                "Standard: false, Implementation: true");
+  static_assert(compliant || !std::is_trivially_default_constructible<T>::value,
+                "Not compliant with std::is_trivially_default_constructible; "
+                "Standard: true, Implementation: false");
 #endif  // ABSL_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE
 };
 
@@ -199,8 +217,11 @@ struct is_trivially_default_constructible
 //
 // Determines whether the passed type `T` is trivially copy constructible.
 //
-// This metafunction is designed to be a drop-in replacement for the C++17
-// `std::is_trivially_copy_constructible()` metafunction.
+// This metafunction is designed to be a drop-in replacement for the C++11
+// `std::is_trivially_copy_constructible()` metafunction for platforms that have
+// incomplete C++11 support (such as libstdc++ 4.x). On any platforms that do
+// fully support C++11, we check whether this yields the same result as the std
+// implementation.
 //
 // NOTE: `T obj(declval<const T&>());` needs to be well-formed and not call any
 // nontrivial operation.  Nontrivally destructible types will cause the
@@ -208,12 +229,19 @@ struct is_trivially_default_constructible
 template <typename T>
 struct is_trivially_copy_constructible
     : std::integral_constant<bool, __has_trivial_copy(T) &&
-                                       std::is_copy_constructible<T>::value &&
-                                       is_trivially_destructible<T>::value> {
+                                   std::is_copy_constructible<T>::value &&
+                                   is_trivially_destructible<T>::value> {
 #ifdef ABSL_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE
-  static_assert(std::is_trivially_copy_constructible<T>::value ==
-                    is_trivially_copy_constructible::value,
-                "Not compliant with std::is_trivially_copy_constructible");
+ private:
+  static constexpr bool compliant =
+      std::is_trivially_copy_constructible<T>::value ==
+      is_trivially_copy_constructible::value;
+  static_assert(compliant || std::is_trivially_copy_constructible<T>::value,
+                "Not compliant with std::is_trivially_copy_constructible; "
+                "Standard: false, Implementation: true");
+  static_assert(compliant || !std::is_trivially_copy_constructible<T>::value,
+                "Not compliant with std::is_trivially_copy_constructible; "
+                "Standard: true, Implementation: false");
 #endif  // ABSL_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE
 };
 
@@ -221,22 +249,32 @@ struct is_trivially_copy_constructible
 //
 // Determines whether the passed type `T` is trivially copy assignable.
 //
-// This metafunction is designed to be a drop-in replacement for the C++17
-// `std::is_trivially_copy_assignable()` metafunction.
+// This metafunction is designed to be a drop-in replacement for the C++11
+// `std::is_trivially_copy_assignable()` metafunction for platforms that have
+// incomplete C++11 support (such as libstdc++ 4.x). On any platforms that do
+// fully support C++11, we check whether this yields the same result as the std
+// implementation.
 //
 // NOTE: `is_assignable<T, U>::value` is `true` if the expression
 // `declval<T>() = declval<U>()` is well-formed when treated as an unevaluated
 // operand. `is_trivially_assignable<T, U>` requires the assignment to call no
 // operation that is not trivial. `is_trivially_copy_assignable<T>` is simply
-// `is_trivially_assignable<T, const T&>`.
+// `is_trivially_assignable<T&, const T&>`.
 template <typename T>
 struct is_trivially_copy_assignable
     : std::integral_constant<bool, __has_trivial_assign(T) &&
-                                       std::is_copy_assignable<T>::value> {
+                                   std::is_copy_assignable<T>::value> {
 #ifdef ABSL_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE
-  static_assert(std::is_trivially_copy_assignable<T>::value ==
-                    is_trivially_copy_assignable::value,
-                "Not compliant with std::is_trivially_copy_assignable");
+ private:
+  static constexpr bool compliant =
+      std::is_trivially_copy_assignable<T>::value ==
+      is_trivially_copy_assignable::value;
+  static_assert(compliant || std::is_trivially_copy_assignable<T>::value,
+                "Not compliant with std::is_trivially_copy_assignable; "
+                "Standard: false, Implementation: true");
+  static_assert(compliant || !std::is_trivially_copy_assignable<T>::value,
+                "Not compliant with std::is_trivially_copy_assignable; "
+                "Standard: true, Implementation: false");
 #endif  // ABSL_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE
 };
 

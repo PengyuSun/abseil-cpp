@@ -56,6 +56,13 @@
 #include <cstddef>
 #endif  // __cplusplus
 
+#if defined(__APPLE__)
+// Included for TARGET_OS_IPHONE, __IPHONE_OS_VERSION_MIN_REQUIRED,
+// __IPHONE_8_0.
+#include <Availability.h>
+#include <TargetConditionals.h>
+#endif
+
 #include "absl/base/policy_checks.h"
 
 // -----------------------------------------------------------------------------
@@ -85,28 +92,6 @@
 #elif defined(__linux__) && (defined(__clang__) || defined(_GLIBCXX_HAVE_TLS))
 #define ABSL_HAVE_TLS 1
 #endif
-
-// There are platforms for which TLS should not be used even though the compiler
-// makes it seem like it's supported (Android NDK < r12b for example).
-// This is primarily because of linker problems and toolchain misconfiguration:
-// Abseil does not intend to support this indefinitely. Currently, the newest
-// toolchain that we intend to support that requires this behavior is the
-// r11 NDK - allowing for a 5 year support window on that means this option
-// is likely to be removed around June of 2021.
-#if defined(__ANDROID__) && defined(__clang__)
-#if __has_include(<android/ndk-version.h>)
-#include <android/ndk-version.h>
-#endif
-// TLS isn't supported until NDK r12b per
-// https://developer.android.com/ndk/downloads/revision_history.html
-// Since NDK r16, `__NDK_MAJOR__` and `__NDK_MINOR__` are defined in
-// <android/ndk-version.h>. For NDK < r16, users should define these macros,
-// e.g. `-D__NDK_MAJOR__=11 -D__NKD_MINOR__=0` for NDK r11.
-#if defined(__NDK_MAJOR__) && defined(__NDK_MINOR__) && \
-    ((__NDK_MAJOR__ < 12) || ((__NDK_MAJOR__ == 12) && (__NDK_MINOR__ < 1)))
-#undef ABSL_HAVE_TLS
-#endif
-#endif  // defined(__ANDROID__) && defined(__clang__)
 
 // ABSL_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE
 //
@@ -151,14 +136,40 @@
 //
 // Checks whether C++11's `thread_local` storage duration specifier is
 // supported.
-//
-// Notes: Clang implements the `thread_local` keyword but Xcode did not support
-// the implementation until Xcode 8.
 #ifdef ABSL_HAVE_THREAD_LOCAL
 #error ABSL_HAVE_THREAD_LOCAL cannot be directly set
-#elif !defined(__apple_build_version__) || __apple_build_version__ >= 8000042
+#elif (!defined(__apple_build_version__) || \
+       (__apple_build_version__ >= 8000042)) && \
+      !(defined(__APPLE__) && TARGET_OS_IPHONE && \
+        __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_9_0)
+// Notes: Xcode's clang did not support `thread_local` until version
+// 8, and even then not for all iOS < 9.0.
 #define ABSL_HAVE_THREAD_LOCAL 1
 #endif
+
+// There are platforms for which TLS should not be used even though the compiler
+// makes it seem like it's supported (Android NDK < r12b for example).
+// This is primarily because of linker problems and toolchain misconfiguration:
+// Abseil does not intend to support this indefinitely. Currently, the newest
+// toolchain that we intend to support that requires this behavior is the
+// r11 NDK - allowing for a 5 year support window on that means this option
+// is likely to be removed around June of 2021.
+// TLS isn't supported until NDK r12b per
+// https://developer.android.com/ndk/downloads/revision_history.html
+// Since NDK r16, `__NDK_MAJOR__` and `__NDK_MINOR__` are defined in
+// <android/ndk-version.h>. For NDK < r16, users should define these macros,
+// e.g. `-D__NDK_MAJOR__=11 -D__NKD_MINOR__=0` for NDK r11.
+#if defined(__ANDROID__) && defined(__clang__)
+#if __has_include(<android/ndk-version.h>)
+#include <android/ndk-version.h>
+#endif  // __has_include(<android/ndk-version.h>)
+#if defined(__ANDROID__) && defined(__clang__) && defined(__NDK_MAJOR__) && \
+    defined(__NDK_MINOR__) &&                                               \
+    ((__NDK_MAJOR__ < 12) || ((__NDK_MAJOR__ == 12) && (__NDK_MINOR__ < 1)))
+#undef ABSL_HAVE_TLS
+#undef ABSL_HAVE_THREAD_LOCAL
+#endif
+#endif  // defined(__ANDROID__) && defined(__clang__)
 
 // ABSL_HAVE_INTRINSIC_INT128
 //
@@ -171,14 +182,21 @@
 // __SIZEOF_INT128__ but not all versions actually support __int128.
 #ifdef ABSL_HAVE_INTRINSIC_INT128
 #error ABSL_HAVE_INTRINSIC_INT128 cannot be directly set
-#elif (defined(__clang__) && defined(__SIZEOF_INT128__) &&               \
-       !defined(__ppc64__) && !defined(__aarch64__)) ||                  \
-    (defined(__CUDACC__) && defined(__SIZEOF_INT128__) &&                \
-     __CUDACC_VER__ >= 70000) ||                                         \
-    (!defined(__clang__) && !defined(__CUDACC__) && defined(__GNUC__) && \
-     defined(__SIZEOF_INT128__))
+#elif defined(__SIZEOF_INT128__)
+#if (defined(__clang__) && !defined(__aarch64__)) ||      \
+    (defined(__CUDACC__) && __CUDACC_VER_MAJOR__ >= 9) || \
+    (!defined(__clang__) && !defined(__CUDACC__) && defined(__GNUC__))
 #define ABSL_HAVE_INTRINSIC_INT128 1
-#endif
+#elif defined(__CUDACC__)
+// __CUDACC_VER__ is a full version number before CUDA 9, and is defined to a
+// std::string explaining that it has been removed starting with CUDA 9. We use
+// nested #ifs because there is no short-circuiting in the preprocessor.
+// NOTE: `__CUDACC__` could be undefined while `__CUDACC_VER__` is defined.
+#if __CUDACC_VER__ >= 70000
+#define ABSL_HAVE_INTRINSIC_INT128 1
+#endif  // __CUDACC_VER__ >= 70000
+#endif  // defined(__CUDACC__)
+#endif  // ABSL_HAVE_INTRINSIC_INT128
 
 // ABSL_HAVE_EXCEPTIONS
 //
@@ -226,7 +244,7 @@
 //   Windows                           _WIN32
 //   NaCL                              __native_client__
 //   AsmJS                             __asmjs__
-//   Fuschia                           __Fuchsia__
+//   Fuchsia                           __Fuchsia__
 //
 // Note that since Android defines both __ANDROID__ and __linux__, one
 // may probe for either Linux or Android by simply testing for __linux__.
@@ -237,8 +255,9 @@
 // POSIX.1-2001.
 #ifdef ABSL_HAVE_MMAP
 #error ABSL_HAVE_MMAP cannot be directly set
-#elif defined(__linux__) || defined(__APPLE__) || defined(__ros__) || \
-    defined(__native_client__) || defined(__asmjs__) || defined(__Fuchsia__)
+#elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) ||   \
+    defined(__ros__) || defined(__native_client__) || defined(__asmjs__) || \
+    defined(__Fuchsia__)
 #define ABSL_HAVE_MMAP 1
 #endif
 
@@ -248,7 +267,8 @@
 // functions as defined in POSIX.1-2001.
 #ifdef ABSL_HAVE_PTHREAD_GETSCHEDPARAM
 #error ABSL_HAVE_PTHREAD_GETSCHEDPARAM cannot be directly set
-#elif defined(__linux__) || defined(__APPLE__) || defined(__ros__)
+#elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+    defined(__ros__)
 #define ABSL_HAVE_PTHREAD_GETSCHEDPARAM 1
 #endif
 
@@ -327,7 +347,7 @@
 
 // ABSL_HAVE_STD_ANY
 //
-// Checks whether C++17 std::any is availble by checking whether <any> exists.
+// Checks whether C++17 std::any is available by checking whether <any> exists.
 #ifdef ABSL_HAVE_STD_ANY
 #error "ABSL_HAVE_STD_ANY cannot be directly set."
 #endif
@@ -362,6 +382,21 @@
 #if __has_include(<string_view>) && __cplusplus >= 201703L
 #define ABSL_HAVE_STD_STRING_VIEW 1
 #endif
+#endif
+
+// For MSVC, `__has_include` is supported in VS 2017 15.3, which is later than
+// the support for <optional>, <any>, <string_view>. So we use _MSC_VER to check
+// whether we have VS 2017 RTM (when <optional>, <any>, <string_view> is
+// implemented) or higher.
+// Also, `__cplusplus` is not correctly set by MSVC, so we use `_MSVC_LANG` to
+// check the language version.
+// TODO(zhangxy): fix tests before enabling aliasing for `std::any`,
+// `std::string_view`.
+#if defined(_MSC_VER) && _MSC_VER >= 1910 && \
+    ((defined(_MSVC_LANG) && _MSVC_LANG > 201402) || __cplusplus > 201402)
+// #define ABSL_HAVE_STD_ANY 1
+#define ABSL_HAVE_STD_OPTIONAL 1
+// #define ABSL_HAVE_STD_STRING_VIEW 1
 #endif
 
 #endif  // ABSL_BASE_CONFIG_H_

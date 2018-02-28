@@ -82,7 +82,8 @@ class InlinedVector {
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-  InlinedVector() noexcept(noexcept(allocator_type()))
+  InlinedVector() noexcept(
+      std::is_nothrow_default_constructible<allocator_type>::value)
       : allocator_and_tag_(allocator_type()) {}
 
   explicit InlinedVector(const allocator_type& alloc) noexcept
@@ -124,15 +125,33 @@ class InlinedVector {
   InlinedVector(const InlinedVector& v);
   InlinedVector(const InlinedVector& v, const allocator_type& alloc);
 
+  // This move constructor does not allocate and only moves the underlying
+  // objects, so its `noexcept` specification depends on whether moving the
+  // underlying objects can throw or not. We assume
+  //  a) move constructors should only throw due to allocation failure and
+  //  b) if `value_type`'s move constructor allocates, it uses the same
+  //     allocation function as the `InlinedVector`'s allocator, so the move
+  //     constructor is non-throwing if the allocator is non-throwing or
+  //     `value_type`'s move constructor is specified as `noexcept`.
   InlinedVector(InlinedVector&& v) noexcept(
       absl::allocator_is_nothrow<allocator_type>::value ||
       std::is_nothrow_move_constructible<value_type>::value);
+
+  // This move constructor allocates and also moves the underlying objects, so
+  // its `noexcept` specification depends on whether the allocation can throw
+  // and whether moving the underlying objects can throw. Based on the same
+  // assumptions above, the `noexcept` specification is dominated by whether the
+  // allocation can throw regardless of whether `value_type`'s move constructor
+  // is specified as `noexcept`.
   InlinedVector(InlinedVector&& v, const allocator_type& alloc) noexcept(
       absl::allocator_is_nothrow<allocator_type>::value);
 
   ~InlinedVector() { clear(); }
 
   InlinedVector& operator=(const InlinedVector& v) {
+    if (this == &v) {
+      return *this;
+    }
     // Optimized to avoid reallocation.
     // Prefer reassignment to copy construction for elements.
     if (size() < v.size()) {  // grow
@@ -346,13 +365,14 @@ class InlinedVector {
   // InlinedVector::emplace_back()
   //
   // Constructs and appends an object to the inlined vector.
+  //
+  // Returns a reference to the inserted element.
   template <typename... Args>
-  void emplace_back(Args&&... args) {
+  value_type& emplace_back(Args&&... args) {
     size_type s = size();
     assert(s <= capacity());
     if (ABSL_PREDICT_FALSE(s == capacity())) {
-      GrowAndEmplaceBack(std::forward<Args>(args)...);
-      return;
+      return GrowAndEmplaceBack(std::forward<Args>(args)...);
     }
     assert(s < capacity());
 
@@ -364,7 +384,7 @@ class InlinedVector {
       tag().set_inline_size(s + 1);
       space = inlined_space();
     }
-    Construct(space + s, std::forward<Args>(args)...);
+    return Construct(space + s, std::forward<Args>(args)...);
   }
 
   // InlinedVector::push_back()
@@ -553,6 +573,42 @@ class InlinedVector {
     }
   }
 
+  // InlinedVector::shrink_to_fit()
+  //
+  // Reduces memory usage by freeing unused memory.
+  // After this call `capacity()` will be equal to `max(N, size())`.
+  //
+  // If `size() <= N` and the elements are currently stored on the heap, they
+  // will be moved to the inlined storage and the heap memory deallocated.
+  // If `size() > N` and `size() < capacity()` the elements will be moved to
+  // a reallocated storage on heap.
+  void shrink_to_fit() {
+    const auto s = size();
+    if (!allocated() || s == capacity()) {
+      // There's nothing to deallocate.
+      return;
+    }
+
+    if (s <= N) {
+      // Move the elements to the inlined storage.
+      // We have to do this using a temporary, because inlined_storage and
+      // allocation_storage are in a union field.
+      auto temp = std::move(*this);
+      assign(std::make_move_iterator(temp.begin()),
+             std::make_move_iterator(temp.end()));
+      return;
+    }
+
+    // Reallocate storage and move elements.
+    // We can't simply use the same approach as above, because assign() would
+    // call into reserve() internally and reserve larger capacity than we need.
+    Allocation new_allocation(allocator(), s);
+    UninitializedCopy(std::make_move_iterator(allocated_space()),
+                      std::make_move_iterator(allocated_space() + s),
+                      new_allocation.buffer());
+    ResetAllocation(new_allocation, s);
+  }
+
   // InlinedVector::swap()
   //
   // Swaps the contents of this inlined vector with the contents of `other`.
@@ -665,6 +721,8 @@ class InlinedVector {
   // portion and the start of the uninitialized portion of the created gap.
   // The number of initialized spots is pair.second - pair.first;
   // the number of raw spots is n - (pair.second - pair.first).
+  //
+  // Updates the size of the InlinedVector internally.
   std::pair<iterator, iterator> ShiftRight(const_iterator position,
                                            size_type n);
 
@@ -682,26 +740,30 @@ class InlinedVector {
   }
 
   template <typename... Args>
-  void GrowAndEmplaceBack(Args&&... args) {
+  value_type& GrowAndEmplaceBack(Args&&... args) {
     assert(size() == capacity());
     const size_type s = size();
 
     Allocation new_allocation(allocator(), 2 * capacity());
 
-    Construct(new_allocation.buffer() + s, std::forward<Args>(args)...);
+    value_type& new_element =
+        Construct(new_allocation.buffer() + s, std::forward<Args>(args)...);
     UninitializedCopy(std::make_move_iterator(data()),
                       std::make_move_iterator(data() + s),
                       new_allocation.buffer());
 
     ResetAllocation(new_allocation, s + 1);
+
+    return new_element;
   }
 
   void InitAssign(size_type n);
   void InitAssign(size_type n, const value_type& t);
 
   template <typename... Args>
-  void Construct(pointer p, Args&&... args) {
+  value_type& Construct(pointer p, Args&&... args) {
     AllocatorTraits::construct(allocator(), p, std::forward<Args>(args)...);
+    return *p;
   }
 
   template <typename Iter>
@@ -998,28 +1060,19 @@ typename InlinedVector<T, N, A>::iterator InlinedVector<T, N, A>::emplace(
     emplace_back(std::forward<Args>(args)...);
     return end() - 1;
   }
-  size_type s = size();
-  size_type idx = std::distance(cbegin(), position);
-  if (s == capacity()) {
-    EnlargeBy(1);
-  }
-  assert(s < capacity());
-  iterator pos = begin() + idx;  // Set 'pos' to a post-enlarge iterator.
 
-  pointer space;
-  if (allocated()) {
-    tag().set_allocated_size(s + 1);
-    space = allocated_space();
+  T new_t = T(std::forward<Args>(args)...);
+
+  auto range = ShiftRight(position, 1);
+  if (range.first == range.second) {
+    // constructing into uninitialized memory
+    Construct(range.first, std::move(new_t));
   } else {
-    tag().set_inline_size(s + 1);
-    space = inlined_space();
+    // assigning into moved-from object
+    *range.first = T(std::move(new_t));
   }
-  Construct(space + s, std::move(space[s - 1]));
-  std::move_backward(pos, space + s - 1, space + s);
-  Destroy(pos, pos + 1);
-  Construct(pos, std::forward<Args>(args)...);
 
-  return pos;
+  return range.first;
 }
 
 template <typename T, size_t N, typename A>
@@ -1204,6 +1257,7 @@ auto InlinedVector<T, N, A>::ShiftRight(const_iterator position, size_type n)
     start_used = pos;
     start_raw = pos + new_elements_in_used_space;
   }
+  tag().add_size(n);
   return std::make_pair(start_used, start_raw);
 }
 
@@ -1282,10 +1336,12 @@ auto InlinedVector<T, N, A>::InsertWithCount(const_iterator position,
     -> iterator {
   assert(position >= begin() && position <= end());
   if (n == 0) return const_cast<iterator>(position);
+
+  value_type copy = v;
   std::pair<iterator, iterator> it_pair = ShiftRight(position, n);
-  std::fill(it_pair.first, it_pair.second, v);
-  UninitializedFill(it_pair.second, it_pair.first + n, v);
-  tag().add_size(n);
+  std::fill(it_pair.first, it_pair.second, copy);
+  UninitializedFill(it_pair.second, it_pair.first + n, copy);
+
   return it_pair.first;
 }
 
@@ -1321,7 +1377,6 @@ auto InlinedVector<T, N, A>::InsertWithRange(const_iterator position,
   ForwardIter open_spot = std::next(first, used_spots);
   std::copy(first, open_spot, it_pair.first);
   UninitializedCopy(open_spot, last, it_pair.second);
-  tag().add_size(n);
   return it_pair.first;
 }
 

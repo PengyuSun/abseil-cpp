@@ -118,6 +118,13 @@ namespace absl {
 //      and `is_nothrow_swappable()` is the same as `std::is_trivial()`.
 //    * `make_optional()` cannot be declared `constexpr` due to the absence of
 //      guaranteed copy elision.
+//    * The move constructor's `noexcept` specification is stronger, i.e. if the
+//      default allocator is non-throwing (via setting
+//      `ABSL_ALLOCATOR_NOTHROW`), it evaluates to `noexcept(true)`, because
+//      we assume
+//       a) move constructors should only throw due to allocation failure and
+//       b) if T's move constructor allocates, it uses the same allocation
+//          function as the default allocator.
 template <typename T>
 class optional;
 
@@ -246,7 +253,7 @@ class optional_data_base : public optional_data_dtor_base<T> {
   }
 };
 
-// TODO(absl-team) Add another class using
+// TODO(absl-team): Add another class using
 // std::is_trivially_move_constructible trait when available to match
 // http://cplusplus.github.io/LWG/lwg-defects.html#2900, for types that
 // have trivial move but nontrivial copy.
@@ -485,11 +492,11 @@ class optional : private optional_internal::optional_data<T>,
 
   // Constructors
 
-  // Constructs a default-constructed `optional` holding the empty value, NOT a
-  // default constructed `T`.
+  // Constructs an `optional` holding an empty value, NOT a default constructed
+  // `T`.
   constexpr optional() noexcept {}
 
-  // Construct an` optional` initialized with `nullopt` to hold an empty value.
+  // Constructs an `optional` initialized with `nullopt` to hold an empty value.
   constexpr optional(nullopt_t) noexcept {}  // NOLINT(runtime/explicit)
 
   // Copy constructor, standard semantics
@@ -508,7 +515,7 @@ class optional : private optional_internal::optional_data<T>,
   constexpr explicit optional(in_place_t, Args&&... args)
       : data_base(in_place_t(), absl::forward<Args>(args)...) {}
 
-  // Constructs a non-empty `optional' direct-initialized value of type `T` from
+  // Constructs a non-empty `optional` direct-initialized value of type `T` from
   // the arguments of an initializer_list and `std::forward<Args>(args)...`.
   // (The `in_place_t` is a tag used to indicate that the contained object
   // should be constructed in-place.)
@@ -774,7 +781,7 @@ class optional : private optional_internal::optional_data<T>,
 
   // optional::operator*()
   //
-  // Accesses the underlying `T `value of an `optional`. If the `optional` is
+  // Accesses the underlying `T` value of an `optional`. If the `optional` is
   // empty, behavior is undefined.
   constexpr const T& operator*() const & { return reference(); }
   T& operator*() & {
@@ -838,16 +845,24 @@ class optional : private optional_internal::optional_data<T>,
 
   // optional::value_or()
   //
-  // Returns either the value of `T` or a passed default `val` if the `optional`
+  // Returns either the value of `T` or a passed default `v` if the `optional`
   // is empty.
   template <typename U>
   constexpr T value_or(U&& v) const& {
+    static_assert(std::is_copy_constructible<value_type>::value,
+                  "optional<T>::value_or: T must by copy constructible");
+    static_assert(std::is_convertible<U&&, value_type>::value,
+                  "optional<T>::value_or: U must be convertible to T");
     return static_cast<bool>(*this)
                ? **this
                : static_cast<T>(absl::forward<U>(v));
   }
   template <typename U>
   T value_or(U&& v) && {  // NOLINT(build/c++11)
+    static_assert(std::is_move_constructible<value_type>::value,
+                  "optional<T>::value_or: T must by copy constructible");
+    static_assert(std::is_convertible<U&&, value_type>::value,
+                  "optional<T>::value_or: U must be convertible to T");
     return static_cast<bool>(*this) ? std::move(**this)
                                     : static_cast<T>(std::forward<U>(v));
   }

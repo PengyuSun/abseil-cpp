@@ -460,10 +460,10 @@ TEST(Duration, InfinityAddition) {
 
   // For reference: IEEE 754 behavior
   const double dbl_inf = std::numeric_limits<double>::infinity();
-  EXPECT_TRUE(isinf(dbl_inf + dbl_inf));
-  EXPECT_TRUE(isnan(dbl_inf + -dbl_inf));  // We return inf
-  EXPECT_TRUE(isnan(-dbl_inf + dbl_inf));  // We return inf
-  EXPECT_TRUE(isinf(-dbl_inf + -dbl_inf));
+  EXPECT_TRUE(std::isinf(dbl_inf + dbl_inf));
+  EXPECT_TRUE(std::isnan(dbl_inf + -dbl_inf));  // We return inf
+  EXPECT_TRUE(std::isnan(-dbl_inf + dbl_inf));  // We return inf
+  EXPECT_TRUE(std::isinf(-dbl_inf + -dbl_inf));
 }
 
 TEST(Duration, InfinitySubtraction) {
@@ -497,10 +497,10 @@ TEST(Duration, InfinitySubtraction) {
 
   // For reference: IEEE 754 behavior
   const double dbl_inf = std::numeric_limits<double>::infinity();
-  EXPECT_TRUE(isnan(dbl_inf - dbl_inf));  // We return inf
-  EXPECT_TRUE(isinf(dbl_inf - -dbl_inf));
-  EXPECT_TRUE(isinf(-dbl_inf - dbl_inf));
-  EXPECT_TRUE(isnan(-dbl_inf - -dbl_inf));  // We return inf
+  EXPECT_TRUE(std::isnan(dbl_inf - dbl_inf));  // We return inf
+  EXPECT_TRUE(std::isinf(dbl_inf - -dbl_inf));
+  EXPECT_TRUE(std::isinf(-dbl_inf - dbl_inf));
+  EXPECT_TRUE(std::isnan(-dbl_inf - -dbl_inf));  // We return inf
 }
 
 TEST(Duration, InfinityMultiplication) {
@@ -708,13 +708,13 @@ TEST(Duration, InfinityIDiv) {
 
   // IEEE 754 says inf / inf should be nan, but int64_t doesn't have
   // nan so we'll return kint64max/kint64min instead.
-  EXPECT_TRUE(isnan(dbl_inf / dbl_inf));
+  EXPECT_TRUE(std::isnan(dbl_inf / dbl_inf));
   EXPECT_EQ(kint64max, inf / inf);
   EXPECT_EQ(kint64max, -inf / -inf);
   EXPECT_EQ(kint64min, -inf / inf);
   EXPECT_EQ(kint64min, inf / -inf);
 
-  EXPECT_TRUE(isinf(dbl_inf / 2.0));
+  EXPECT_TRUE(std::isinf(dbl_inf / 2.0));
   EXPECT_EQ(kint64max, inf / any_dur);
   EXPECT_EQ(kint64max, -inf / -any_dur);
   EXPECT_EQ(kint64min, -inf / any_dur);
@@ -763,8 +763,8 @@ TEST(Duration, DivisionByZero) {
 
   // IEEE 754 behavior
   double z = 0.0, two = 2.0;
-  EXPECT_TRUE(isinf(two / z));
-  EXPECT_TRUE(isnan(z / z));  // We'll return inf
+  EXPECT_TRUE(std::isinf(two / z));
+  EXPECT_TRUE(std::isnan(z / z));  // We'll return inf
 
   // Operator/(Duration, double)
   EXPECT_EQ(inf, zero / 0.0);
@@ -1573,6 +1573,7 @@ TEST(Duration, ParseDuration) {
   EXPECT_FALSE(absl::ParseDuration("2s ", &d));
   EXPECT_FALSE(absl::ParseDuration(" 2s ", &d));
   EXPECT_FALSE(absl::ParseDuration("2mt", &d));
+  EXPECT_FALSE(absl::ParseDuration("1e3s", &d));
 
   // One unit type.
   EXPECT_TRUE(absl::ParseDuration("1ns", &d));
@@ -1587,6 +1588,12 @@ TEST(Duration, ParseDuration) {
   EXPECT_EQ(absl::Minutes(2), d);
   EXPECT_TRUE(absl::ParseDuration("2h", &d));
   EXPECT_EQ(absl::Hours(2), d);
+
+  // Huge counts of a unit.
+  EXPECT_TRUE(absl::ParseDuration("9223372036854775807us", &d));
+  EXPECT_EQ(absl::Microseconds(9223372036854775807), d);
+  EXPECT_TRUE(absl::ParseDuration("-9223372036854775807us", &d));
+  EXPECT_EQ(absl::Microseconds(-9223372036854775807), d);
 
   // Multiple units.
   EXPECT_TRUE(absl::ParseDuration("2h3m4s", &d));
@@ -1618,6 +1625,12 @@ TEST(Duration, ParseDuration) {
   EXPECT_EQ(1.5 * absl::Minutes(1), d);
   EXPECT_TRUE(absl::ParseDuration("1.5h", &d));
   EXPECT_EQ(1.5 * absl::Hours(1), d);
+
+  // Huge fractional counts of a unit.
+  EXPECT_TRUE(absl::ParseDuration("0.4294967295s", &d));
+  EXPECT_EQ(absl::Nanoseconds(429496729) + absl::Nanoseconds(1) / 2, d);
+  EXPECT_TRUE(absl::ParseDuration("0.429496729501234567890123456789s", &d));
+  EXPECT_EQ(absl::Nanoseconds(429496729) + absl::Nanoseconds(1) / 2, d);
 
   // Negative durations.
   EXPECT_TRUE(absl::ParseDuration("-1s", &d));

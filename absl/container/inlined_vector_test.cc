@@ -14,6 +14,7 @@
 
 #include "absl/container/inlined_vector.h"
 
+#include <algorithm>
 #include <forward_list>
 #include <list>
 #include <memory>
@@ -392,6 +393,82 @@ TEST(InlinedVectorTest, Noexcept) {
                 absl::InlinedVector<MoveCanThrow, 2>>::value));
 }
 
+TEST(InlinedVectorTest, EmplaceBack) {
+  absl::InlinedVector<std::pair<std::string, int>, 1> v;
+
+  auto& inlined_element = v.emplace_back("answer", 42);
+  EXPECT_EQ(&inlined_element, &v[0]);
+  EXPECT_EQ(inlined_element.first, "answer");
+  EXPECT_EQ(inlined_element.second, 42);
+
+  auto& allocated_element = v.emplace_back("taxicab", 1729);
+  EXPECT_EQ(&allocated_element, &v[1]);
+  EXPECT_EQ(allocated_element.first, "taxicab");
+  EXPECT_EQ(allocated_element.second, 1729);
+}
+
+TEST(InlinedVectorTest, ShrinkToFitGrowingVector) {
+  absl::InlinedVector<std::pair<std::string, int>, 1> v;
+
+  v.shrink_to_fit();
+  EXPECT_EQ(v.capacity(), 1);
+
+  v.emplace_back("answer", 42);
+  v.shrink_to_fit();
+  EXPECT_EQ(v.capacity(), 1);
+
+  v.emplace_back("taxicab", 1729);
+  EXPECT_GE(v.capacity(), 2);
+  v.shrink_to_fit();
+  EXPECT_EQ(v.capacity(), 2);
+
+  v.reserve(100);
+  EXPECT_GE(v.capacity(), 100);
+  v.shrink_to_fit();
+  EXPECT_EQ(v.capacity(), 2);
+}
+
+TEST(InlinedVectorTest, ShrinkToFitEdgeCases) {
+  {
+    absl::InlinedVector<std::pair<std::string, int>, 1> v;
+    v.emplace_back("answer", 42);
+    v.emplace_back("taxicab", 1729);
+    EXPECT_GE(v.capacity(), 2);
+    v.pop_back();
+    v.shrink_to_fit();
+    EXPECT_EQ(v.capacity(), 1);
+    EXPECT_EQ(v[0].first, "answer");
+    EXPECT_EQ(v[0].second, 42);
+  }
+
+  {
+    absl::InlinedVector<std::string, 2> v(100);
+    v.resize(0);
+    v.shrink_to_fit();
+    EXPECT_EQ(v.capacity(), 2);  // inlined capacity
+  }
+
+  {
+    absl::InlinedVector<std::string, 2> v(100);
+    v.resize(1);
+    v.shrink_to_fit();
+    EXPECT_EQ(v.capacity(), 2);  // inlined capacity
+  }
+
+  {
+    absl::InlinedVector<std::string, 2> v(100);
+    v.resize(2);
+    v.shrink_to_fit();
+    EXPECT_EQ(v.capacity(), 2);
+  }
+
+  {
+    absl::InlinedVector<std::string, 2> v(100);
+    v.resize(3);
+    v.shrink_to_fit();
+    EXPECT_EQ(v.capacity(), 3);
+  }
+}
 
 TEST(IntVec, Insert) {
   for (int len = 0; len < 20; len++) {
@@ -569,6 +646,16 @@ TEST(IntVec, CopyConstructorAndAssignment) {
   }
 }
 
+TEST(IntVec, AliasingCopyAssignment) {
+  for (int len = 0; len < 20; ++len) {
+    IntVec original;
+    Fill(&original, len);
+    IntVec dup = original;
+    dup = dup;
+    EXPECT_EQ(dup, original);
+  }
+}
+
 TEST(IntVec, MoveConstructorAndAssignment) {
   for (int len = 0; len < 20; len++) {
     IntVec v_in;
@@ -602,6 +689,78 @@ TEST(IntVec, MoveConstructorAndAssignment) {
       } else {
         EXPECT_FALSE(v_out.data() == old_data);
       }
+    }
+  }
+}
+
+class NotTriviallyDestructible {
+ public:
+  NotTriviallyDestructible() : p_(new int(1)) {}
+  explicit NotTriviallyDestructible(int i) : p_(new int(i)) {}
+
+  NotTriviallyDestructible(const NotTriviallyDestructible& other)
+      : p_(new int(*other.p_)) {}
+
+  NotTriviallyDestructible& operator=(const NotTriviallyDestructible& other) {
+    p_ = absl::make_unique<int>(*other.p_);
+    return *this;
+  }
+
+  bool operator==(const NotTriviallyDestructible& other) const {
+    return *p_ == *other.p_;
+  }
+
+ private:
+  std::unique_ptr<int> p_;
+};
+
+TEST(AliasingTest, Emplace) {
+  for (int i = 2; i < 20; ++i) {
+    absl::InlinedVector<NotTriviallyDestructible, 10> vec;
+    for (int j = 0; j < i; ++j) {
+      vec.push_back(NotTriviallyDestructible(j));
+    }
+    vec.emplace(vec.begin(), vec[0]);
+    EXPECT_EQ(vec[0], vec[1]);
+    vec.emplace(vec.begin() + i / 2, vec[i / 2]);
+    EXPECT_EQ(vec[i / 2], vec[i / 2 + 1]);
+    vec.emplace(vec.end() - 1, vec.back());
+    EXPECT_EQ(vec[vec.size() - 2], vec.back());
+  }
+}
+
+TEST(AliasingTest, InsertWithCount) {
+  for (int i = 1; i < 20; ++i) {
+    absl::InlinedVector<NotTriviallyDestructible, 10> vec;
+    for (int j = 0; j < i; ++j) {
+      vec.push_back(NotTriviallyDestructible(j));
+    }
+    for (int n = 0; n < 5; ++n) {
+      // We use back where we can because it's guaranteed to become invalidated
+      vec.insert(vec.begin(), n, vec.back());
+      auto b = vec.begin();
+      EXPECT_TRUE(
+          std::all_of(b, b + n, [&vec](const NotTriviallyDestructible& x) {
+            return x == vec.back();
+          }));
+
+      auto m_idx = vec.size() / 2;
+      vec.insert(vec.begin() + m_idx, n, vec.back());
+      auto m = vec.begin() + m_idx;
+      EXPECT_TRUE(
+          std::all_of(m, m + n, [&vec](const NotTriviallyDestructible& x) {
+            return x == vec.back();
+          }));
+
+      // We want distinct values so the equality test is meaningful,
+      // vec[vec.size() - 1] is also almost always invalidated.
+      auto old_e = vec.size() - 1;
+      auto val = vec[old_e];
+      vec.insert(vec.end(), n, vec[old_e]);
+      auto e = vec.begin() + old_e;
+      EXPECT_TRUE(std::all_of(
+          e, e + n,
+          [&val](const NotTriviallyDestructible& x) { return x == val; }));
     }
   }
 }
@@ -1492,6 +1651,20 @@ TEST(AllocatorSupportTest, CountAllocations) {
     MyAlloc alloc3(&allocated3);
     AllocVec v3(std::move(v), alloc3);
     EXPECT_THAT(allocated3, v3.size() * sizeof(int));
+  }
+  EXPECT_EQ(allocated, 0);
+  {
+    // Test shrink_to_fit deallocations.
+    AllocVec v(8, 2, alloc);
+    EXPECT_EQ(allocated, 8 * sizeof(int));
+    v.resize(5);
+    EXPECT_EQ(allocated, 8 * sizeof(int));
+    v.shrink_to_fit();
+    EXPECT_EQ(allocated, 5 * sizeof(int));
+    v.resize(4);
+    EXPECT_EQ(allocated, 5 * sizeof(int));
+    v.shrink_to_fit();
+    EXPECT_EQ(allocated, 0);
   }
 }
 

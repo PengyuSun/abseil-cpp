@@ -166,6 +166,18 @@ TEST(Split, APIExamples) {
   }
 
   {
+    // Different forms of initialization / conversion.
+    std::vector<std::string> v1 = absl::StrSplit("a,b,c", ',');
+    EXPECT_THAT(v1, ElementsAre("a", "b", "c"));
+    std::vector<std::string> v2(absl::StrSplit("a,b,c", ','));
+    EXPECT_THAT(v2, ElementsAre("a", "b", "c"));
+    auto v3 = std::vector<std::string>(absl::StrSplit("a,b,c", ','));
+    EXPECT_THAT(v3, ElementsAre("a", "b", "c"));
+    v3 = absl::StrSplit("a,b,c", ',');
+    EXPECT_THAT(v3, ElementsAre("a", "b", "c"));
+  }
+
+  {
     // Results stored in a std::map.
     std::map<std::string, std::string> m = absl::StrSplit("a,1,b,2,a,3", ',');
     EXPECT_EQ(2, m.size());
@@ -609,23 +621,28 @@ TEST(Split, StringDelimiter) {
 
 TEST(Split, UTF8) {
   // Tests splitting utf8 strings and utf8 delimiters.
+  std::string utf8_string = u8"\u03BA\u1F79\u03C3\u03BC\u03B5";
   {
     // A utf8 input std::string with an ascii delimiter.
-    std::vector<absl::string_view> v = absl::StrSplit("a,κόσμε", ',');
-    EXPECT_THAT(v, ElementsAre("a", "κόσμε"));
+    std::string to_split = "a," + utf8_string;
+    std::vector<absl::string_view> v = absl::StrSplit(to_split, ',');
+    EXPECT_THAT(v, ElementsAre("a", utf8_string));
   }
 
   {
     // A utf8 input std::string and a utf8 delimiter.
-    std::vector<absl::string_view> v = absl::StrSplit("a,κόσμε,b", ",κόσμε,");
+    std::string to_split = "a," + utf8_string + ",b";
+    std::string unicode_delimiter = "," + utf8_string + ",";
+    std::vector<absl::string_view> v =
+        absl::StrSplit(to_split, unicode_delimiter);
     EXPECT_THAT(v, ElementsAre("a", "b"));
   }
 
   {
     // A utf8 input std::string and ByAnyChar with ascii chars.
     std::vector<absl::string_view> v =
-        absl::StrSplit("Foo hällo th丞re", absl::ByAnyChar(" \t"));
-    EXPECT_THAT(v, ElementsAre("Foo", "hällo", "th丞re"));
+        absl::StrSplit(u8"Foo h\u00E4llo th\u4E1Ere", absl::ByAnyChar(" \t"));
+    EXPECT_THAT(v, ElementsAre("Foo", u8"h\u00E4llo", u8"th\u4E1Ere"));
   }
 }
 
@@ -857,12 +874,10 @@ TEST(Delimiter, ByLength) {
   EXPECT_FALSE(IsFoundAt("abcd", four_char_delim, 0));
 }
 
-// Allocates too much memory for TSan and MSan.
-#if !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
 TEST(Split, WorksWithLargeStrings) {
-  if (sizeof(size_t) > 4 && !RunningOnValgrind()) {
-    std::string s(1ULL << 31, 'x');
-    s.push_back('-');  // 2G + 1 byte
+  if (sizeof(size_t) > 4) {
+    std::string s((uint32_t{1} << 31) + 1, 'x');  // 2G + 1 byte
+    s.back() = '-';
     std::vector<absl::string_view> v = absl::StrSplit(s, '-');
     EXPECT_EQ(2, v.size());
     // The first element will contain 2G of 'x's.
@@ -873,7 +888,6 @@ TEST(Split, WorksWithLargeStrings) {
     EXPECT_EQ("", v[1]);
   }
 }
-#endif  // THREAD_SANITIZER
 
 TEST(SplitInternalTest, TypeTraits) {
   EXPECT_FALSE(absl::strings_internal::HasMappedType<int>::value);

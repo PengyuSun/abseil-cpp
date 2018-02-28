@@ -50,7 +50,7 @@ namespace base_internal {
 class LOCKABLE SpinLock {
  public:
   SpinLock() : lockword_(kSpinLockCooperative) {
-    ABSL_TSAN_MUTEX_CREATE(this, 0);
+    ABSL_TSAN_MUTEX_CREATE(this, __tsan_mutex_not_static);
   }
 
   // Special constructor for use with static SpinLock objects.  E.g.,
@@ -64,7 +64,7 @@ class LOCKABLE SpinLock {
   // initializers run.
   explicit SpinLock(base_internal::LinkerInitialized) {
     // Does nothing; lockword_ is already initialized
-    ABSL_TSAN_MUTEX_CREATE(this, __tsan_mutex_linker_init);
+    ABSL_TSAN_MUTEX_CREATE(this, 0);
   }
 
   // Constructors that allow non-cooperative spinlocks to be created for use
@@ -73,7 +73,7 @@ class LOCKABLE SpinLock {
   SpinLock(base_internal::LinkerInitialized,
            base_internal::SchedulingMode mode);
 
-  ~SpinLock() { ABSL_TSAN_MUTEX_DESTROY(this, 0); }
+  ~SpinLock() { ABSL_TSAN_MUTEX_DESTROY(this, __tsan_mutex_not_static); }
 
   // Acquire this SpinLock.
   inline void Lock() EXCLUSIVE_LOCK_FUNCTION() {
@@ -151,6 +151,12 @@ class LOCKABLE SpinLock {
   enum { kWaitTimeMask =                      // Includes kSpinLockSleeper.
     ~(kSpinLockHeld | kSpinLockCooperative | kSpinLockDisabledScheduling) };
 
+  // Returns true if the provided scheduling mode is cooperative.
+  static constexpr bool IsCooperative(
+      base_internal::SchedulingMode scheduling_mode) {
+    return scheduling_mode == base_internal::SCHEDULE_COOPERATIVE_AND_KERNEL;
+  }
+
   uint32_t TryLockInternal(uint32_t lock_value, uint32_t wait_cycles);
   void InitLinkerInitializedAndCooperative();
   void SlowLock() ABSL_ATTRIBUTE_COLD;
@@ -221,7 +227,7 @@ inline uint32_t SpinLock::TryLockInternal(uint32_t lock_value,
           kSpinLockHeld | lock_value | wait_cycles | sched_disabled_bit,
           std::memory_order_acquire, std::memory_order_relaxed)) {
   } else {
-    base_internal::SchedulingGuard::EnableRescheduling(sched_disabled_bit);
+    base_internal::SchedulingGuard::EnableRescheduling(sched_disabled_bit != 0);
   }
 
   return lock_value;

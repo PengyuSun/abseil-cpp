@@ -118,7 +118,7 @@ namespace absl {
 //   using absl::ByString;
 //   std::vector<std::string> v2 = absl::StrSplit("a, b, c",
 //                                                ByString(", "));
-//   // v[0] == "a", v[1] == "b", v[3] == "c"
+//   // v[0] == "a", v[1] == "b", v[2] == "c"
 class ByString {
  public:
   explicit ByString(absl::string_view sp);
@@ -141,7 +141,7 @@ class ByString {
 //   std::vector<std::string> v1 = absl::StrSplit("a,b,c", ',');
 //   using absl::ByChar;
 //   std::vector<std::string> v2 = absl::StrSplit("a,b,c", ByChar(','));
-//   // v[0] == "a", v[1] == "b", v[3] == "c"
+//   // v[0] == "a", v[1] == "b", v[2] == "c"
 //
 // `ByChar` is also the default delimiter if a single character is given
 // as the delimiter to `StrSplit()`. For example, the following calls are
@@ -173,7 +173,7 @@ class ByChar {
 //
 //   using absl::ByAnyChar;
 //   std::vector<std::string> v = absl::StrSplit("a,b=c", ByAnyChar(",="));
-//   // v[0] == "a", v[1] == "b", v[3] == "c"
+//   // v[0] == "a", v[1] == "b", v[2] == "c"
 //
 // If `ByAnyChar` is given the empty std::string, it behaves exactly like
 // `ByString` and matches each individual character in the input std::string.
@@ -208,7 +208,7 @@ class ByAnyChar {
 //   using absl::ByLength;
 //   std::vector<std::string> v = absl::StrSplit("12345", ByLength(2));
 //
-//   // v[0] == "12", v[1] == "35", v[2] == "5"
+//   // v[0] == "12", v[1] == "34", v[2] == "5"
 class ByLength {
  public:
   explicit ByLength(ptrdiff_t length);
@@ -390,7 +390,7 @@ struct SkipWhitespace {
 //
 //   using absl::ByAnyChar;
 //   std::vector<std::string> v = absl::StrSplit("a,b=c", ByAnyChar(",="));
-//   // v[0] == "a", v[1] == "b", v[3] == "c"
+//   // v[0] == "a", v[1] == "b", v[2] == "c"
 //
 // See above for more information on delimiters.
 //

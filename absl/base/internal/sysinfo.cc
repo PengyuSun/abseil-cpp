@@ -14,6 +14,8 @@
 
 #include "absl/base/internal/sysinfo.h"
 
+#include "absl/base/attributes.h"
+
 #ifdef _WIN32
 #include <shlwapi.h>
 #include <windows.h>
@@ -29,7 +31,7 @@
 #include <sys/syscall.h>
 #endif
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__FreeBSD__)
 #include <sys/sysctl.h>
 #endif
 
@@ -282,6 +284,30 @@ pid_t GetTID() {
 
 pid_t GetTID() {
   return syscall(SYS_gettid);
+}
+
+#elif defined(__akaros__)
+
+pid_t GetTID() {
+  // Akaros has a concept of "vcore context", which is the state the program
+  // is forced into when we need to make a user-level scheduling decision, or
+  // run a signal handler.  This is analogous to the interrupt context that a
+  // CPU might enter if it encounters some kind of exception.
+  //
+  // There is no current thread context in vcore context, but we need to give
+  // a reasonable answer if asked for a thread ID (e.g., in a signal handler).
+  // Thread 0 always exists, so if we are in vcore context, we return that.
+  //
+  // Otherwise, we know (since we are using pthreads) that the uthread struct
+  // current_uthread is pointing to is the first element of a
+  // struct pthread_tcb, so we extract and return the thread ID from that.
+  //
+  // TODO(dcross): Akaros anticipates moving the thread ID to the uthread
+  // structure at some point. We should modify this code to remove the cast
+  // when that happens.
+  if (in_vcore_context())
+    return 0;
+  return reinterpret_cast<struct pthread_tcb *>(current_uthread)->id;
 }
 
 #else

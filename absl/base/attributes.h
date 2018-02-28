@@ -260,7 +260,7 @@
 // ABSL_ATTRIBUTE_NO_SANITIZE_UNDEFINED
 //
 // Tells the UndefinedSanitizer to ignore a given function. Useful for cases
-// where certain behavior (eg. devision by zero) is being used intentionally.
+// where certain behavior (eg. division by zero) is being used intentionally.
 // NOTE: GCC supports UndefinedBehaviorSanitizer(ubsan) since 4.9.
 // https://gcc.gnu.org/gcc-4.9/changes.html
 #if defined(__GNUC__) && \
@@ -279,6 +279,18 @@
 #define ABSL_ATTRIBUTE_NO_SANITIZE_CFI __attribute__((no_sanitize("cfi")))
 #else
 #define ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+#endif
+
+// ABSL_ATTRIBUTE_RETURNS_NONNULL
+//
+// Tells the compiler that a particular function never returns a null pointer.
+#if ABSL_HAVE_ATTRIBUTE(returns_nonnull) || \
+    (defined(__GNUC__) && \
+     (__GNUC__ > 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9)) && \
+     !defined(__clang__))
+#define ABSL_ATTRIBUTE_RETURNS_NONNULL __attribute__((returns_nonnull))
+#else
+#define ABSL_ATTRIBUTE_RETURNS_NONNULL
 #endif
 
 // ABSL_HAVE_ATTRIBUTE_SECTION
@@ -304,6 +316,7 @@
 #define ABSL_ATTRIBUTE_SECTION(name) \
   __attribute__((section(#name))) __attribute__((noinline))
 #endif
+
 
 // ABSL_ATTRIBUTE_SECTION_VARIABLE
 //
@@ -344,6 +357,7 @@
   (reinterpret_cast<void *>(__start_##name))
 #define ABSL_ATTRIBUTE_SECTION_STOP(name) \
   (reinterpret_cast<void *>(__stop_##name))
+
 #else  // !ABSL_HAVE_ATTRIBUTE_SECTION
 
 #define ABSL_HAVE_ATTRIBUTE_SECTION 0
@@ -356,6 +370,7 @@
 #define ABSL_DECLARE_ATTRIBUTE_SECTION_VARS(name)
 #define ABSL_ATTRIBUTE_SECTION_START(name) (reinterpret_cast<void *>(0))
 #define ABSL_ATTRIBUTE_SECTION_STOP(name) (reinterpret_cast<void *>(0))
+
 #endif  // ABSL_ATTRIBUTE_SECTION
 
 // ABSL_ATTRIBUTE_STACK_ALIGN_FOR_OLD_LIBC
@@ -510,6 +525,16 @@
 #define ABSL_ATTRIBUTE_PACKED __attribute__((__packed__))
 #else
 #define ABSL_ATTRIBUTE_PACKED
+#endif
+
+// ABSL_ATTRIBUTE_FUNC_ALIGN
+//
+// Tells the compiler to align the function start at least to certain
+// alignment boundary
+#if ABSL_HAVE_ATTRIBUTE(aligned) || (defined(__GNUC__) && !defined(__clang__))
+#define ABSL_ATTRIBUTE_FUNC_ALIGN(bytes) __attribute__((aligned(bytes)))
+#else
+#define ABSL_ATTRIBUTE_FUNC_ALIGN(bytes)
 #endif
 
 // ABSL_CONST_INIT
